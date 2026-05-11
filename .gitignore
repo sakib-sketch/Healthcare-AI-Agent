@@ -1,0 +1,22 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Environment Variables (IMPORTANT: Never share your API keys)
+.env
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data & Reports
+data/*.csv
+data/*.xlsx
+medical_report.csv
+medical_billing_report.csv
+
+# IDE Files
+.vscode/
+.idea/

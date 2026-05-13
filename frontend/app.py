@@ -10,6 +10,15 @@ import pytesseract
 from pdf2image import convert_from_path
 import docx
 from streamlit_mic_recorder import mic_recorder
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# --- TESSERACT CONFIG ---
+tesseract_path = os.getenv("TESSERACT_PATH", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+if os.path.exists(tesseract_path):
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
 # Add backend to path so we can import agents
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'backend')))
@@ -123,7 +132,14 @@ def extract_text(uploaded_file):
         elif file_ext in ["png", "jpg", "jpeg"]:
             text = pytesseract.image_to_string(Image.open(tmp_path))
     except Exception as e:
-        st.error(f"Error extracting text: {e}")
+        error_msg = str(e)
+        if "tesseract is not installed" in error_msg.lower():
+            st.error("❌ Tesseract OCR not found. Please ensure it is installed and the path in `.env` is correct.")
+            st.info(f"Currently looking at: `{tesseract_path}`")
+        elif "poppler" in error_msg.lower():
+            st.error("❌ Poppler not found. PDF processing requires Poppler to be installed and in PATH.")
+        else:
+            st.error(f"Error extracting text: {e}")
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)

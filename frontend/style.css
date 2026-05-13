@@ -108,6 +108,8 @@ html, body, [data-testid="stAppViewContainer"] {
     font-weight: 600 !important;
     padding: 0.6rem 1.5rem !important;
     transition: all 0.2s ease !important;
+    white-space: nowrap !important;
+    min-width: fit-content !important;
 }
 
 [data-testid="stAppViewContainer"] [data-testid="stBaseButton-secondary"] {

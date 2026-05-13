@@ -21,6 +21,18 @@ class MedicalCodingWorkflow:
         print("Step 4: Generating final report...")
         final_report = self.reporter.generate_report(extracted_info, codes, audit_results)
         
+        # SAVE TO DATABASE
+        print("Step 5: Saving results to database...")
+        db = SessionLocal()
+        try:
+            case_id = save_case(db, clinical_note, final_report)
+            print(f"Case saved to database with ID: {case_id}")
+            final_report['case_id'] = case_id
+        except Exception as e:
+            print(f"Error saving to database: {e}")
+        finally:
+            db.close()
+            
         return final_report
 
 if __name__ == "__main__":

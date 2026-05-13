@@ -1,0 +1,161 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --bg-main: #f0f4f8;
+    --card-bg: rgba(255, 255, 255, 0.85);
+    --glass-border: rgba(255, 255, 255, 0.3);
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --success: #10b981;
+    --warning: #f59e0b;
+}
+
+/* 
+   FIX: Removed the broad [class*="st-"] selector which was causing 
+   text overlap in the settings menu and other internal components.
+*/
+html, body, [data-testid="stAppViewContainer"] {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+}
+
+.stApp {
+    background: radial-gradient(circle at top right, #e0e7ff 0%, #f0f4f8 100%);
+}
+
+/* Header Styling */
+.header-container {
+    padding: 1rem 0;
+    margin-bottom: 1.5rem;
+}
+
+.header-text-main {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    display: inline-block;
+    font-weight: 800;
+    font-size: 3.5rem;
+    letter-spacing: -0.02em;
+    margin: 0;
+}
+
+.header-text-sub {
+    color: var(--text-muted) !important;
+    font-size: 1.1rem;
+    font-weight: 400;
+    margin-top: 0.1rem;
+}
+
+/* Glass Card Styling */
+.glass-card {
+    background: var(--card-bg) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 16px;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px rgba(31, 38, 135, 0.07);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(31, 38, 135, 0.12);
+}
+
+/* Agent Status Cards */
+.agent-card {
+    border-left: 4px solid transparent;
+}
+
+.agent-active {
+    border-left-color: var(--primary);
+    background: rgba(59, 130, 246, 0.05) !important;
+}
+
+.agent-done {
+    border-left-color: var(--success);
+    background: rgba(16, 185, 129, 0.05) !important;
+}
+
+/* Tag Styling */
+.tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.8rem;
+    border-radius: 99px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0.25rem;
+    border: 1px solid transparent;
+}
+
+.tag-diagnosis { background: #eff6ff; color: #1e40af; border-color: #dbeafe; }
+.tag-symptom { background: #fffbeb; color: #92400e; border-color: #fef3c7; }
+.tag-procedure { background: #f0fdf4; color: #166534; border-color: #dcfce7; }
+.tag-med { background: #faf5ff; color: #6b21a8; border-color: #f3e8ff; }
+
+/* 
+   FIX FOR 'uploadpload' & Menu Overlap
+   We target ONLY specific data-testids for the main app buttons.
+*/
+[data-testid="stAppViewContainer"] [data-testid^="stBaseButton"] {
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+    padding: 0.6rem 1.5rem !important;
+    transition: all 0.2s ease !important;
+}
+
+[data-testid="stAppViewContainer"] [data-testid="stBaseButton-secondary"] {
+    background-color: white !important;
+    color: var(--primary) !important;
+    border: 1px solid #e2e8f0 !important;
+}
+
+[data-testid="stAppViewContainer"] [data-testid="stBaseButton-primary"] {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+    color: white !important;
+    border: none !important;
+}
+
+/* Explicitly prevent these styles from hitting the sidebar or settings menu */
+[data-testid="stHeader"], [data-testid="stSidebar"], .st-emotion-cache-zt5igj {
+    background-clip: border-box !important;
+    -webkit-background-clip: border-box !important;
+}
+
+/* Fix for File Uploader specific duplication */
+[data-testid="stFileUploadDropzone"] button {
+    all: revert !important;
+}
+[data-testid="stFileUploadDropzone"] button * {
+    all: revert !important;
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background-color: rgba(255, 255, 255, 0.5) !important;
+    backdrop-filter: blur(10px);
+}
+
+.sidebar-header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    padding: 2rem;
+    border-radius: 16px;
+    margin-bottom: 2rem;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+
+.sidebar-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 1rem;
+    padding-left: 0.5rem;
+}

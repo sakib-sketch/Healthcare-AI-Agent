@@ -1,4 +1,6 @@
 from agents import ExtractorAgent, CoderAgent, AuditorAgent, ReportingAgent
+from database.db import SessionLocal
+from database.crud import save_case
 
 class MedicalCodingWorkflow:
     def __init__(self):

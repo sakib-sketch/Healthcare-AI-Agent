@@ -60,18 +60,22 @@ except ImportError:
             return {
                 "summary": {"total_diagnoses": 3, "total_codes": 3},
                 "details": [
-                    {"diagnosis": "Type 2 Diabetes", "code": "E11.9", "status": "Approved"},
-                    {"diagnosis": "Foot Ulcer", "code": "L97.509", "status": "Approved"},
-                    {"diagnosis": "Peripheral Neuropathy", "code": "G62.9", "status": "Pending"}
+                    {"diagnosis": "Type 2 Diabetes", "code": "E11.9", "status": "Approved", "confidence": 0.96},
+                    {"diagnosis": "Foot Ulcer", "code": "L97.509", "status": "Approved", "confidence": 0.92},
+                    {"diagnosis": "Peripheral Neuropathy", "code": "G62.9", "status": "Pending", "confidence": 0.85}
                 ],
-                "entities": ["Type 2 Diabetes", "Foot Ulcer", "Peripheral Neuropathy"]
+                "entities": ["Type 2 Diabetes", "Foot Ulcer", "Peripheral Neuropathy"],
+                "patient_summary": "Patient has diabetes with nerve damage and an open sore on the foot."
             }
 
-@st.cache_resource
-def get_workflow():
+def get_workflow_v2():
     return MedicalCodingWorkflow()
 
 # --- HELPER FUNCTIONS ---
+
+def reset_analysis():
+    st.session_state['result'] = None
+    st.session_state['extracted_text'] = ""
 
 def safe_temp_file(suffix, data=None):
     """Safely handles temp file creation and writing."""
@@ -149,7 +153,7 @@ def extract_text(uploaded_file):
 st.markdown("""
     <div class="header-container">
         <h1 class="header-text-main">MediCode AI</h1>
-        <p class="header-text-sub">Professional Multi-Agent Healthcare Coding Pipeline</p>
+        <p class="header-text-sub">Agentic Clinical Intelligence</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -204,9 +208,7 @@ with col_input:
     
     col_clear, _ = st.columns([1, 2])
     with col_clear:
-        if st.button("🗑️ Clear", use_container_width=True):
-            st.session_state['extracted_text'] = ""
-            st.rerun()
+        st.button("🗑️ Clear", use_container_width=True, on_click=reset_analysis)
 
     st.text_area(
         "Review / Edit clinical notes",
@@ -224,7 +226,7 @@ with col_input:
         if st.session_state['extracted_text']:
             with st.spinner("🤖 Running Multi-Agent Medical Workflow..."):
                 try:
-                    workflow = get_workflow()
+                    workflow = get_workflow_v2()
                     result = workflow.process_note(st.session_state['extracted_text'])
                     st.session_state['result'] = result
                     st.session_state['transcript'] = st.session_state['extracted_text']
@@ -240,12 +242,21 @@ with col_output:
 
     if st.session_state['result']:
         # New Analysis Button
-        if st.button("➕ Start New Analysis", use_container_width=True):
-            st.session_state['result'] = None
-            st.session_state['extracted_text'] = ""
-            st.rerun()
+        st.button("➕ Start New Analysis", use_container_width=True, on_click=reset_analysis)
 
         res = st.session_state['result']
+
+        # Calculate average confidence
+        details = res.get('details', [])
+        avg_conf_pct = 0
+        if details:
+            confidences = [float(d.get('confidence', 0)) for d in details if d.get('confidence') is not None]
+            if confidences:
+                avg_conf = sum(confidences) / len(confidences)
+                if avg_conf <= 1.0:
+                    avg_conf_pct = int(avg_conf * 100)
+                else:
+                    avg_conf_pct = int(avg_conf)
 
         # Metrics in glass cards
         m1, m2, m3 = st.columns(3)
@@ -254,19 +265,34 @@ with col_output:
         with m2:
             st.metric("Codes", res['summary']['total_codes'])
         with m3:
-            st.metric("Confidence", "94%")
+            st.markdown(f"""
+            <div style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; height: 100%;">
+                <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 5px 0;">Confidence</p>
+                <div style="width: 60px; height: 60px;">
+                    <svg viewBox="0 0 36 36" class="circular-chart blue">
+                        <path class="circle-bg"
+                            d="M18 2.0845
+                            a 15.9155 15.9155 0 0 1 0 31.831
+                            a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <path class="circle"
+                            stroke-dasharray="{avg_conf_pct}, 100"
+                            d="M18 2.0845
+                            a 15.9155 15.9155 0 0 1 0 31.831
+                            a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <text x="18" y="20.35" class="percentage">{avg_conf_pct}%</text>
+                    </svg>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown("#### 🔍 Extracted Clinical Entities")
-        entities = res.get('entities', [])
-        tags_html = "".join([f'<span class="tag tag-diagnosis">{ent}</span>' for ent in entities])
-        st.markdown(tags_html or "*No entities identified*", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown("#### 📄 Clinical Transcript Sent")
-        st.text_area("Transcript", value=st.session_state.get('transcript', ''), height=100, disabled=True, label_visibility="collapsed")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f'''
+        <div class="glass-card" style="margin-top: 1rem;">
+            <h4 style="margin-top: 0; color: var(--text-main); font-weight: 600; margin-bottom: 1rem;">🤝 Patient-Friendly Summary</h4>
+            <div style="background: rgba(255, 255, 255, 0.6); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.8); color: var(--text-main); line-height: 1.6; font-size: 1.05rem; white-space: pre-wrap; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">{res.get('patient_summary', 'No summary generated.')}</div>
+        </div>
+        ''', unsafe_allow_html=True)
 
         st.markdown("#### 💳 ICD-10 Billing Codes")
         df = pd.DataFrame(res['details'])
@@ -313,6 +339,7 @@ with st.sidebar:
         ("Extractor Agent", "Entities Identified" if is_done else "Waiting..."),
         ("Coder Agent", "ICD-10 Mapping Done" if is_done else "Waiting..."),
         ("Auditor Agent", "Validation Passed" if is_done else "Waiting..."),
+        ("Humanizer Agent", "Summary Generated" if is_done else "Waiting..."),
         ("Reporting Agent", "Report Generated" if is_done else "Waiting...")
     ]
 

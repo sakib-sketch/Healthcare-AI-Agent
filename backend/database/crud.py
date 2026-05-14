@@ -28,7 +28,7 @@ def save_case(db, transcript, result):
 
             diagnosis=row['diagnosis'],
 
-            icd_code=row['code'],
+            icd_code=row['icd10_code'],
 
             status=row['status']
         )

@@ -5,28 +5,37 @@ class CoderAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self.prompt_template = """
-        You are a Certified Medical Coder (ICD-10-CM Expert).
-        Your task is to take a list of medical diagnoses and map each one to its correct ICD-10 code and official description.
+        You are a Certified Medical Coder (ICD-10-CM and CPT Expert).
+        Your task is to take a list of medical diagnoses and procedures and map each one to its correct code.
 
-        Diagnoses List:
-        {diagnoses}
+        Diagnoses: {diagnoses}
+        Procedures: {procedures}
+
+        Rules:
+        1. For each Diagnosis, find the most accurate ICD-10-CM code.
+        2. For each Procedure, find the most accurate CPT code (5 digits).
+        3. Provide an official description for each code.
 
         Output format must be a JSON array of objects:
         [
             {{
-                "diagnosis": "Original diagnosis",
-                "icd10_code": "CODE",
-                "description": "Official ICD-10 Description"
+                "entity": "Original text (diagnosis or procedure)",
+                "type": "Diagnosis or Procedure",
+                "code": "ICD-10 or CPT code",
+                "description": "Official description"
             }}
         ]
         Return ONLY the JSON. No other text.
         """
 
-    def map_codes(self, diagnoses):
-        if not diagnoses:
+    def map_codes(self, diagnoses, procedures):
+        if not diagnoses and not procedures:
             return []
         
-        prompt = self.prompt_template.format(diagnoses=str(diagnoses))
+        prompt = self.prompt_template.format(
+            diagnoses=str(diagnoses),
+            procedures=str(procedures)
+        )
         response = self.generate_response(prompt)
         try:
             start = response.find('[')

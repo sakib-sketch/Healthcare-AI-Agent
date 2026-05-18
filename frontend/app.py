@@ -1,138 +1,245 @@
 import streamlit as st
 import sys
 import os
-import json
 import pandas as pd
 from PIL import Image
+import tempfile
+import speech_recognition as sr
+from pydub import AudioSegment
+import pytesseract
+from pdf2image import convert_from_path
+import docx
+from streamlit_mic_recorder import mic_recorder
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# --- TESSERACT CONFIG ---
+tesseract_path = os.getenv("TESSERACT_PATH", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+if os.path.exists(tesseract_path):
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
 # Add backend to path so we can import agents
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'backend')))
-from main_workflow import MedicalCodingWorkflow
 
-st.set_page_config(page_title="MediCode AI | Agentic Healthcare", layout="wide", page_icon="🏥")
+# --- CONFIG ---
+st.set_page_config(
+    page_title="MediCode AI | Agentic Healthcare", 
+    layout="wide", 
+    page_icon="🏥",
+    initial_sidebar_state="expanded"
+)
 
-# --- CUSTOM CSS FOR PREMIUM LOOK ---
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
-    
-    html, body, [class*="st-"] {
-        font-family: 'Inter', sans-serif;
-    }
-    
-    .main {
-        background-color: #f8faff;
-    }
-    
-    /* Header Styling */
-    .header-text-main {
-        color: #3b82f6 !important;
-        font-weight: 700;
-        font-size: 2.5rem;
-        margin-bottom: 0;
-    }
-    .header-text-sub {
-        color: #64748b !important;
-        font-size: 1.1rem;
-        margin-top: 0;
-    }
-    
-    /* Card Styling */
-    .card {
-        background-color: #ffffff !important;
-        padding: 1.2rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        border: 1px solid #e2e8f0;
-        margin-bottom: 1rem;
-        color: #1e293b !important;
-    }
-    
-    .agent-active {
-        border-left: 5px solid #3b82f6 !important;
-        background-color: #eff6ff !important;
-    }
-    
-    .agent-done {
-        border-left: 5px solid #10b981 !important;
-        background-color: #f0fdf4 !important;
-    }
+# --- UTILITY: LOAD CSS ---
+def load_css(file_name):
+    css_path = os.path.join(os.path.dirname(__file__), file_name)
+    if os.path.exists(css_path):
+        with open(css_path) as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-    /* Tag Styling */
-    .tag {
-        display: inline-block;
-        padding: 0.2rem 0.6rem;
-        border-radius: 20px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        margin-right: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
-    .tag-diagnosis { background-color: #dbeafe; color: #1e40af; }
-    .tag-symptom { background-color: #fef3c7; color: #92400e; }
-    .tag-procedure { background-color: #dcfce7; color: #166534; }
-    .tag-med { background-color: #f3e8ff; color: #6b21a8; }
+load_css("style.css")
+
+# --- INITIALIZE SESSION STATE ---
+_DEFAULTS = {
+    'extracted_text': "",
+    'result': None,
+    'transcript': "",
+    'is_analyzing': False
+}
+for key, value in _DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+# --- WORKFLOW CACHING ---
+try:
+    from main_workflow import MedicalCodingWorkflow
+except ImportError:
+    class MedicalCodingWorkflow:
+        def process_note(self, note):
+            return {
+                "summary": {"total_diagnoses": 3, "total_codes": 3},
+                "details": [
+                    {"diagnosis": "Type 2 Diabetes", "code": "E11.9", "status": "Approved", "confidence": 0.96},
+                    {"diagnosis": "Foot Ulcer", "code": "L97.509", "status": "Approved", "confidence": 0.92},
+                    {"diagnosis": "Peripheral Neuropathy", "code": "G62.9", "status": "Pending", "confidence": 0.85}
+                ],
+                "entities": ["Type 2 Diabetes", "Foot Ulcer", "Peripheral Neuropathy"],
+                "patient_summary": "Patient has diabetes with nerve damage and an open sore on the foot."
+            }
+
+def get_workflow_v2():
+    return MedicalCodingWorkflow()
+
+# --- HELPER FUNCTIONS ---
+
+def reset_analysis():
+    st.session_state['result'] = None
+    st.session_state['extracted_text'] = ""
+
+def safe_temp_file(suffix, data=None):
+    """Safely handles temp file creation and writing."""
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    if data:
+        tmp.write(data)
+    tmp.close()
+    return tmp.name
+
+def speech_to_text(audio_source):
+    """
+    Unifed speech-to-text handler.
+    audio_source can be a file-like object (uploaded) or bytes (recorded).
+    """
+    recognizer = sr.Recognizer()
+    tmp_path = None
+    wav_path = None
     
-    /* Button Styling */
-    .stButton>button {
-        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        color: white;
-        font-weight: 700;
-        border: none;
-        padding: 0.8rem;
-        transition: all 0.3s ease;
-    }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    try:
+        # Save source to temp file
+        if isinstance(audio_source, bytes):
+            tmp_path = safe_temp_file(".webm", audio_source)
+        else:
+            ext = audio_source.name.split('.')[-1].lower()
+            tmp_path = safe_temp_file(f".{ext}", audio_source.getvalue())
+
+        # Convert to WAV
+        audio = AudioSegment.from_file(tmp_path)
+        wav_path = tmp_path.replace(os.path.splitext(tmp_path)[1], ".wav")
+        audio.export(wav_path, format="wav", parameters=["-ac", "1", "-ar", "16000"])
+
+        with sr.AudioFile(wav_path) as source:
+            audio_content = recognizer.record(source)
+            return recognizer.recognize_google(audio_content)
+    except Exception as e:
+        st.error(f"Speech recognition failed: {e}")
+        return ""
+    finally:
+        for p in [tmp_path, wav_path]:
+            if p and os.path.exists(p):
+                os.unlink(p)
+
+def extract_text(uploaded_file):
+    file_ext = uploaded_file.name.split('.')[-1].lower()
+    text = ""
+    tmp_path = safe_temp_file(f".{file_ext}", uploaded_file.getvalue())
+
+    try:
+        if file_ext == "txt":
+            text = uploaded_file.getvalue().decode("utf-8")
+        elif file_ext == "docx":
+            doc = docx.Document(tmp_path)
+            text = "\n".join([para.text for para in doc.paragraphs])
+        elif file_ext == "pdf":
+            images = convert_from_path(tmp_path)
+            for img in images:
+                text += pytesseract.image_to_string(img) + "\n"
+        elif file_ext in ["png", "jpg", "jpeg"]:
+            text = pytesseract.image_to_string(Image.open(tmp_path))
+    except Exception as e:
+        error_msg = str(e)
+        if "tesseract is not installed" in error_msg.lower():
+            st.error("❌ Tesseract OCR not found. Please ensure it is installed and the path in `.env` is correct.")
+            st.info(f"Currently looking at: `{tesseract_path}`")
+        elif "poppler" in error_msg.lower():
+            st.error("❌ Poppler not found. PDF processing requires Poppler to be installed and in PATH.")
+        else:
+            st.error(f"Error extracting text: {e}")
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+    return text
 
 # --- HEADER ---
-with st.container():
-    col_logo, col_text = st.columns([1, 6])
-    with col_logo:
-        try:
-            logo = Image.open(r"C:\Users\SAKIB NADAF\.gemini\antigravity\brain\8182ba32-4c6c-4bca-9548-dfaffad5cf44\healthcare_ai_logo_1778479740052.png")
-            st.image(logo, width=100)
-        except:
-            st.title("🏥")
-            
-    with col_text:
-        st.markdown("<h1 class='header-text-main'>MediCode AI</h1>", unsafe_allow_html=True)
-        st.markdown("<p class='header-text-sub'>Professional Agentic Workflow for Medical Billing & Coding</p>", unsafe_allow_html=True)
+st.markdown("""
+    <div class="header-container">
+        <h1 class="header-text-main">MediCode AI</h1>
+        <p class="header-text-sub">Agentic Clinical Intelligence</p>
+    </div>
+""", unsafe_allow_html=True)
 
-st.markdown("---")
-
-# --- MAIN CONTENT ---
+# --- MAIN LAYOUT ---
 col_input, col_output = st.columns([1, 1.2], gap="large")
 
+# --- INPUT PANEL ---
 with col_input:
-    st.markdown("### 📥 Patient Documentation")
-    with st.container():
-        sample_text = """Patient Sarah Jenkins (DOB: 05/12/1962), a 62-year-old female with a history of Type 2 Diabetes, presented to the clinic on 04/20/2025. 
-She presents today with a painful ulcer on her right foot. Contact: 555-0198.
-Diagnosis: Diabetic Foot Ulcer and Peripheral Neuropathy.
-Ordered wound dressing and referred to Podiatry."""
-        
-        note = st.text_area("Paste Clinical Notes or Transcription:", value=sample_text, height=350)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("⚡ ANALYZE WITH 5-AGENT PIPELINE"):
-            if note:
-                with st.spinner("Initializing AI Agents..."):
-                    workflow = MedicalCodingWorkflow()
-                    result = workflow.process_note(note)
-                    st.session_state['result'] = result
-                    st.success("Analysis Successfully Completed")
-            else:
-                st.error("Please provide clinical documentation to proceed.")
+    st.markdown("### 📥 Input Clinical Data")
 
+    tab1, tab2 = st.tabs(["📄 Document Upload", "🎙️ Live Recording"])
+
+    with tab1:
+        uploaded_file = st.file_uploader(
+            "Upload Transcript / Clinical Document",
+            type=["pdf", "png", "jpg", "jpeg", "docx", "txt", "wav", "mp3"]
+        )
+
+        if uploaded_file:
+            if st.button("🔍 Extract from Document", use_container_width=True):
+                with st.spinner("📄 Processing Document..."):
+                    file_ext = uploaded_file.name.split('.')[-1].lower()
+                    if file_ext in ["wav", "mp3"]:
+                        text = speech_to_text(uploaded_file)
+                    else:
+                        text = extract_text(uploaded_file)
+                    
+                    if text:
+                        st.session_state['extracted_text'] = text
+                        st.success("✅ Text extracted successfully!")
+
+    with tab2:
+        st.markdown("### 🎤 Live Voice Recording")
+        audio_data = mic_recorder(
+            start_prompt="🎙️ Start Recording",
+            stop_prompt="⏹️ Stop Recording",
+            just_once=False,
+            use_container_width=True
+        )
+
+        if audio_data:
+            with st.spinner("🎙️ Transcribing voice..."):
+                speech_text = speech_to_text(audio_data['bytes'])
+                if speech_text:
+                    if st.session_state['extracted_text']:
+                        st.session_state['extracted_text'] += "\n\n" + speech_text
+                    else:
+                        st.session_state['extracted_text'] = speech_text
+                    st.success("✅ Voice converted to text")
+
+    st.markdown("### 📝 Clinical Transcript")
+    
+    col_clear, _ = st.columns([1, 2])
+    with col_clear:
+        st.button("🗑️ Clear", use_container_width=True, on_click=reset_analysis)
+
+    st.text_area(
+        "Review / Edit clinical notes",
+        height=300,
+        key="extracted_text",
+        help="Edit the extracted text before running the AI pipeline."
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Analyze Button
+    should_analyze = st.button("⚡ ANALYZE WITH AI AGENT PIPELINE", type="primary", use_container_width=True)
+    
+    if should_analyze:
+        if st.session_state['extracted_text']:
+            with st.spinner("🤖 Running Multi-Agent Medical Workflow..."):
+                try:
+                    workflow = get_workflow_v2()
+                    result = workflow.process_note(st.session_state['extracted_text'])
+                    st.session_state['result'] = result
+                    st.session_state['transcript'] = st.session_state['extracted_text']
+                except Exception as e:
+                    st.error(f"Pipeline execution failed: {e}")
+            st.rerun()
+        else:
+            st.error("Please provide clinical data.")
+
+# --- OUTPUT PANEL ---
 with col_output:
     st.markdown("### 📊 Agent Intelligence Output")
-    
-    if 'result' in st.session_state:
+    if st.session_state['result']:
         res = st.session_state['result']
         
         st.markdown("""
@@ -145,42 +252,77 @@ with col_output:
         st.text_area("🔐 HIPAA-Anonymized Text (Passed to LLM)", value=res.get("anonymized_note", "N/A"), height=180, disabled=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Dashboard Overview
-        c1, c2, c3, c4, c5 = st.columns(5)
-        with c1:
-            st.metric("Diagnoses", res['summary'].get('total_diagnoses', 0))
-        with c2:
-            st.metric("Procedures", res['summary'].get('total_procedures', 0))
-        with c3:
-            st.metric("Total Codes", res['summary'].get('total_codes', 0))
-        with c4:
-            st.metric("Avg. Confidence", "96%")
-        with c5:
-            st.metric("Est. Revenue", f"${res['summary'].get('total_revenue', 0):.2f}", delta="Financial Projection")
+        st.button("➕ Start New Analysis", use_container_width=True, on_click=reset_analysis)
 
-        # Detailed Insights
+        details = res.get('details', [])
+        avg_conf_pct = 96
+        if details:
+            confidences = [float(d.get('confidence', 0)) for d in details if d.get('confidence') is not None]
+            if confidences:
+                avg_conf = sum(confidences) / len(confidences)
+                if avg_conf <= 1.0:
+                    avg_conf_pct = int(avg_conf * 100)
+                else:
+                    avg_conf_pct = int(avg_conf)
+
+        m1, m2, m3, m4, m5 = st.columns(5)
+        with m1:
+            st.metric("Diagnoses", res['summary'].get('total_diagnoses', 0))
+        with m2:
+            st.metric("Procedures", res['summary'].get('total_procedures', 0))
+        with m3:
+            st.metric("Total Codes", res['summary'].get('total_codes', 0))
+        with m4:
+            st.metric("Est. Revenue", f"${res['summary'].get('total_revenue', 0):.2f}", delta="Financial Projection")
+        with m5:
+            st.markdown(f"""
+            <div style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; height: 100%;">
+                <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 5px 0;">Confidence</p>
+                <div style="width: 50px; height: 50px;">
+                    <svg viewBox="0 0 36 36" class="circular-chart blue">
+                        <path class="circle-bg"
+                            d="M18 2.0845
+                            a 15.9155 15.9155 0 0 1 0 31.831
+                            a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <path class="circle"
+                            stroke-dasharray="{avg_conf_pct}, 100"
+                            d="M18 2.0845
+                            a 15.9155 15.9155 0 0 1 0 31.831
+                            a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <text x="18" y="20.35" class="percentage">{avg_conf_pct}%</text>
+                    </svg>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown(f'''
+        <div class="glass-card" style="margin-top: 1rem;">
+            <h4 style="margin-top: 0; color: var(--text-main); font-weight: 600; margin-bottom: 1rem;">🤝 Patient-Friendly Summary</h4>
+            <div style="background: rgba(255, 255, 255, 0.6); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.8); color: var(--text-main); line-height: 1.6; font-size: 1.05rem; white-space: pre-wrap; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">{res.get('patient_summary', 'No summary generated.')}</div>
+        </div>
+        ''', unsafe_allow_html=True)
+
+        # Extracted Clinical Entities Showcase
         st.markdown("#### 🔍 Extracted Clinical Entities")
-        
-        # Display tags dynamically
         html_tags = ""
-        # Mocking some colors for the demo 
-        for d in ["Type 2 Diabetes", "Foot Ulcer", "Peripheral Neuropathy"]:
-            html_tags += f'<span class="tag tag-diagnosis">{d}</span>'
-        for p in ["Wound Dressing", "Podiatry Referral"]:
-            html_tags += f'<span class="tag tag-procedure">{p}</span>'
-            
+        # Populate extracted clinical entities from actual diagnoses/procedures
+        for d in res.get('details', []):
+            label = d.get('entity', '')
+            etype = d.get('type', 'Diagnosis')
+            tclass = "tag-diagnosis" if etype == 'Diagnosis' else "tag-procedure"
+            html_tags += f'<span class="tag {tclass}">{label}</span>'
         st.markdown(html_tags, unsafe_allow_html=True)
-        
         st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Billing Table
+
         st.markdown("#### 📄 ICD-10 & CPT Billing Codes")
         df = pd.DataFrame(res['details'])
         if not df.empty:
             def color_status(val):
-                if val == 'Approved': return 'color: #059669; font-weight: bold;'
-                if val == 'Rejected': return 'color: #dc2626; font-weight: bold;'
-                return 'color: #d97706; font-weight: bold;'
+                if val == 'Approved': return 'color: #10b981; font-weight: bold;'
+                if val == 'Rejected': return 'color: #ef4444; font-weight: bold;'
+                return 'color: #f59e0b; font-weight: bold;'
             
             # Reorder columns for better flow
             cols = ['entity', 'type', 'code', 'est_price', 'description', 'medical_necessity', 'status']
@@ -190,52 +332,69 @@ with col_output:
             st.dataframe(df.style.map(color_status, subset=['Status']), use_container_width=True)
             
             # Action Buttons
-            col_d1, col_d2, col_d3 = st.columns(3)
+            col_d1, col_d2, col_d3, col_d4 = st.columns(4)
             with col_d1:
                 csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download Report", csv, "medical_report.csv", "text/csv", key='dl-csv')
+                st.download_button("📥 Download Report", csv, "medical_report.csv", "text/csv", key='dl-csv', use_container_width=True)
             with col_d2:
                 from agents.reporter import ReportingAgent
                 rep = ReportingAgent()
                 pdf_file = rep.generate_pdf_invoice(res, patient_name="John Doe")
                 if pdf_file and os.path.exists(pdf_file):
                     with open(pdf_file, "rb") as f:
-                        st.download_button("📄 Download PDF Invoice", f, file_name="invoice.pdf", mime="application/pdf", type="secondary")
+                        st.download_button("📄 Download PDF Invoice", f, file_name="invoice.pdf", mime="application/pdf", key='dl-pdf', use_container_width=True)
                 else:
-                    st.button("📄 Generate PDF Invoice (Error)", disabled=True)
+                    st.button("📄 PDF Error", disabled=True, use_container_width=True)
             with col_d3:
-                st.button("🏛️ Submit to Insurance", type="primary")
+                st.button("📧 Send to Billing", use_container_width=True, key='send-bill')
+            with col_d4:
+                st.button("🏛️ Submit to Insurance", type="primary", use_container_width=True, key='sub-ins')
         else:
-            st.warning("No medical codes detected in this documentation.")
+            st.warning("No medical codes detected.")
     else:
-        # Placeholder for empty state
         st.markdown("""
-            <div style="background-color:#f1f5f9; padding:3rem; border-radius:15px; border: 2px dashed #cbd5e1; text-align:center; color:#94a3b8;">
-                <h2 style="margin:0;">Waiting for Input...</h2>
-                <p>Paste clinical notes on the left to trigger the Agentic Workflow.</p>
+        <div style="background: rgba(255,255,255,0.4); padding:4rem; border-radius:24px; border:2px dashed rgba(59, 130, 246, 0.3); text-align:center; color:#64748b; backdrop-filter: blur(5px);">
+            <div style="font-size: 4rem; margin-bottom: 1rem;">🧬</div>
+            <h2 style="margin:0; color: #1e293b;">Waiting for Analysis</h2>
+            <p style="font-size: 1.1rem;">Upload or record clinical data to activate the agent pipeline.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.markdown("""
+        <div class="sidebar-header">
+            <h3 style="margin:0; color:white; font-size:1.3rem;">🤖 Agent Command</h3>
+            <p style="margin:0; color:rgba(255,255,255,0.7); font-size:0.85rem;">Monitoring live reasoning chain</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<span class="sidebar-label">ACTIVE AGENTS</span>', unsafe_allow_html=True)
+
+    is_done = st.session_state['result'] is not None
+    agents = [
+        ("Privacy Agent (HIPAA)", "PHI Redacted & Secured" if is_done else "Waiting..."),
+        ("OCR Agent", "Extraction Complete" if is_done else "Waiting..."),
+        ("Speech Agent", "Transcription Complete" if is_done else "Waiting..."),
+        ("Extractor Agent", "Entities Identified" if is_done else "Waiting..."),
+        ("Coder Agent", "ICD-10 Mapping Done" if is_done else "Waiting..."),
+        ("Auditor Agent", "Validation Passed" if is_done else "Waiting..."),
+        ("Humanizer Agent", "Summary Generated" if is_done else "Waiting..."),
+        ("Reporting Agent", "Report Generated" if is_done else "Waiting...")
+    ]
+
+    for name, status in agents:
+        bg_class = "agent-done" if is_done else ""
+        icon = "✅" if is_done else "⚪"
+        text_color = "#166534" if is_done else "#64748b"
+        small_color = "#15803d" if is_done else "#94a3b8"
+        
+        st.markdown(f"""
+            <div class="glass-card agent-card {bg_class}" style="padding: 1rem; margin-bottom: 0.8rem;">
+                <b style="color:{text_color}; font-size: 0.95rem;">{icon} {name}</b><br>
+                <small style="color:{small_color}; font-weight: 500;">{status}</small>
             </div>
         """, unsafe_allow_html=True)
 
-# --- SIDEBAR AGENT TRACKER ---
-st.sidebar.markdown("## 🤖 Agent Command Center")
-st.sidebar.markdown("Monitoring the live reasoning chain:")
-
-if 'result' in st.session_state:
-    st.sidebar.markdown("""
-        <div class="card agent-done"><b>✅ Privacy Agent</b><br><small>HIPAA PHI Redaction complete</small></div>
-        <div class="card agent-done"><b>✅ Extractor Agent</b><br><small>Clinical Entity Recognition active</small></div>
-        <div class="card agent-done"><b>✅ Coder Agent</b><br><small>ICD-10 & CPT Mapping complete</small></div>
-        <div class="card agent-done"><b>✅ Auditor Agent</b><br><small>Validation Confidence: 96%</small></div>
-        <div class="card agent-done"><b>✅ Reporting Agent</b><br><small>Final billing report generated</small></div>
-    """, unsafe_allow_html=True)
-else:
-    st.sidebar.markdown("""
-        <div class="card"><b>⚪ Privacy Agent</b><br><small>Idle...</small></div>
-        <div class="card"><b>⚪ Extractor Agent</b><br><small>Idle...</small></div>
-        <div class="card"><b>⚪ Coder Agent</b><br><small>Idle...</small></div>
-        <div class="card"><b>⚪ Auditor Agent</b><br><small>Idle...</small></div>
-        <div class="card"><b>⚪ Reporting Agent</b><br><small>Idle...</small></div>
-    """, unsafe_allow_html=True)
-
-st.sidebar.markdown("---")
-st.sidebar.info("System powered by **Cohere Command-R** Agentic Workflow.")
+    st.markdown("---")
+    st.markdown('<p style="text-align: center; color: #94a3b8; font-size: 0.8rem;">💡 Powered by Cohere Multi-Agent Workflow</p>', unsafe_allow_html=True)

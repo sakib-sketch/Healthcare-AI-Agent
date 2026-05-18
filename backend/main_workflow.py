@@ -1,4 +1,9 @@
-from agents import ExtractorAgent, CoderAgent, AuditorAgent, ReportingAgent, PrivacyAgent
+import os
+print(f"LOADING WORKFLOW FROM: {os.path.abspath(__file__)}")
+
+from agents import ExtractorAgent, CoderAgent, AuditorAgent, ReportingAgent, PrivacyAgent, HumanizerAgent
+from database.db import SessionLocal
+from database.crud import save_case
 
 class MedicalCodingWorkflow:
     def __init__(self):
@@ -7,6 +12,7 @@ class MedicalCodingWorkflow:
         self.coder = CoderAgent()
         self.auditor = AuditorAgent()
         self.reporter = ReportingAgent()
+        self.humanizer = HumanizerAgent()
 
     def process_note(self, clinical_note):
         print("Step 0: Anonymizing patient data (HIPAA Compliance)...")
@@ -28,4 +34,21 @@ class MedicalCodingWorkflow:
         
         # Attach the anonymized note to the report so UI can display it
         final_report["anonymized_note"] = anonymized_note
+
+        print("Step 5: Generating patient-friendly summary...")
+        final_report['patient_summary'] = self.humanizer.generate_summary(clinical_note)
+        
+        # SAVE TO DATABASE
+        print("Step 6: Saving results to database...")
+        db = SessionLocal()
+        try:
+            case_id = save_case(db, clinical_note, final_report)
+            print(f"Case saved to database with ID: {case_id}")
+            final_report['case_id'] = case_id
+        except Exception as e:
+            print(f"Error saving to database: {e}")
+        finally:
+            db.close()
+            
+        print(f"DEBUG: final_report keys: {final_report.keys()}")
         return final_report

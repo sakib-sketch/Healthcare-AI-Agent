@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Virtual Environment
 venv/
 .venv/
@@ -20,3 +21,14 @@ medical_billing_report.csv
 # IDE Files
 .vscode/
 .idea/
+=======
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.vscode/
+.idea/
+*.log
+data/
+>>>>>>> 65cab42 (Initial commit: Professional medical coding AI workflow with multi-agent architecture)

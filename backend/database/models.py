@@ -20,9 +20,13 @@ class PatientCase(Base):
 
     confidence_score = Column(Float)
 
+    total_bill = Column(Float)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     icd_codes = relationship("ICDCode", back_populates="patient_case")
+
+    entities = relationship("ClinicalEntity", back_populates="patient_case")
 
 #ICD CODE MODEL
 
@@ -51,8 +55,10 @@ class ClinicalEntity(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    case_id = Column(Integer)
+    case_id = Column(Integer, ForeignKey("patient_cases.id"))
 
     entity_text = Column(String)
 
     entity_type = Column(String)
+
+    patient_case = relationship("PatientCase", back_populates="entities")

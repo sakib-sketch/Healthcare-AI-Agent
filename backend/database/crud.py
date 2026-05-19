@@ -1,6 +1,19 @@
 from database.models import PatientCase, ICDCode, ClinicalEntity
+from database.db import Base, engine
+
+# Ensure database tables are created automatically
+Base.metadata.create_all(bind=engine)
 
 def save_case(db, transcript, result):
+
+    # Calculate real average confidence from the model's output
+    details = result.get('details', [])
+    avg_conf = 0.0
+    if details:
+        confidences = [float(d.get('confidence', 0)) for d in details if d.get('confidence') is not None]
+        if confidences:
+            avg = sum(confidences) / len(confidences)
+            avg_conf = (avg * 100) if avg <= 1.0 else avg
 
     patient_case = PatientCase(
 
@@ -10,7 +23,9 @@ def save_case(db, transcript, result):
 
         total_codes=result['summary']['total_codes'],
 
-        confidence_score=94.0
+        confidence_score=avg_conf,
+        
+        total_bill=result['summary'].get('total_revenue', 0.0)
     )
 
     db.add(patient_case)
@@ -26,14 +41,22 @@ def save_case(db, transcript, result):
 
             case_id=patient_case.id,
 
-            diagnosis=row['diagnosis'],
+            diagnosis=row.get('entity') or row.get('diagnosis'),
 
-            icd_code=row['icd10_code'],
+            icd_code=row.get('code') or row.get('icd10_code'),
 
-            status=row['status']
+            status=row.get('status')
         )
 
         db.add(icd)
+
+        # Save Clinical Entity
+        entity = ClinicalEntity(
+            case_id=patient_case.id,
+            entity_text=row.get('entity') or row.get('diagnosis'),
+            entity_type=row.get('type', 'Diagnosis')
+        )
+        db.add(entity)
 
     db.commit()
 

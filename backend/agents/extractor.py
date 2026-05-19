@@ -9,7 +9,7 @@ class ExtractorAgent(BaseAgent):
         Your task is to read clinical notes and extract specific medical entities.
         
         Extract the following:
-        1. Diagnoses (Diseases or conditions mentioned)
+        1. Diagnosis (Diseases or conditions mentioned)
         2. Symptoms (Complaints from the patient)
         3. Procedures (Tests, surgeries, or treatments performed)
         4. Medications (Drugs prescribed)
@@ -19,7 +19,7 @@ class ExtractorAgent(BaseAgent):
 
         Output format must be a clean JSON object like this:
         {{
-            "diagnoses": [],
+            "diagnosis": [],
             "symptoms": [],
             "procedures": [],
             "medications": []

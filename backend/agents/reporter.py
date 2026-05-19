@@ -18,7 +18,7 @@ class ReportingAgent:
         # Combine all data into a clean structure
         report = {
             "summary": {
-                "total_diagnoses": len(extracted_info.get("diagnoses", [])),
+                "total_diagnoses": len(extracted_info.get("diagnoses", []) or extracted_info.get("diagnosis", [])),
                 "total_procedures": len(extracted_info.get("procedures", [])),
                 "total_codes": len(codes),
                 "total_revenue": 0.0
@@ -34,11 +34,13 @@ class ReportingAgent:
             code = item.get('code')
             audit = audit_map.get(code, {"status": "Not Audited", "confidence_score": 0, "reason": "No audit data"})
             
-            # Calculate price if it's a procedure
-            est_price = 0
+            # Calculate price
             if item.get('type') == 'Procedure':
-                est_price = self.price_list.get(code, self.price_list['DEFAULT_PROCEDURE'])
-                total_rev += est_price
+                est_price = 50.0
+            else:
+                est_price = 10.0
+                
+            total_rev += est_price
 
             report["details"].append({
                 "entity": item.get('entity'),
@@ -97,14 +99,14 @@ class ReportingAgent:
             # Truncate description to fit
             desc = str(item['description'])[:50]
             pdf.cell(100, 10, desc, border=1)
-            price_str = f"${item['est_price']:.2f}" if item['type'] == 'Procedure' else "-"
+            price_str = f"${item['est_price']:.2f}"
             pdf.cell(30, 10, price_str, border=1, ln=True)
 
         pdf.ln(10)
 
         # Total
         pdf.set_font("Arial", 'B', 12)
-        pdf.cell(160, 10, "Total Estimated Revenue:", align="R")
+        pdf.cell(160, 10, "Total Bill:", align="R")
         pdf.cell(30, 10, f"${report['summary']['total_revenue']:.2f}", ln=True)
 
         pdf.output(filename)

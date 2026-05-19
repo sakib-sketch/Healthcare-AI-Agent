@@ -63,7 +63,9 @@ for key, value in _DEFAULTS.items():
 # --- WORKFLOW CACHING ---
 try:
     from main_workflow import MedicalCodingWorkflow
-except ImportError:
+    print("SUCCESSFULLY IMPORTED REAL WORKFLOW")
+except Exception as e:
+    print(f"FAILED TO IMPORT REAL WORKFLOW: {e}")
     class MedicalCodingWorkflow:
         def process_note(self, note):
             return {
@@ -78,7 +80,55 @@ except ImportError:
             }
 
 def get_workflow_v2():
-    return MedicalCodingWorkflow()
+    try:
+        import importlib
+        import main_workflow
+        importlib.reload(main_workflow)
+        import agents.reporter
+        importlib.reload(agents.reporter)
+        import database.crud
+        importlib.reload(database.crud)
+        print("RELOADED WORKFLOW AND DATABASE SCRIPTS successfully")
+        return main_workflow.MedicalCodingWorkflow()
+    except Exception as e:
+        print(f"Failed to reload workflow modules: {e}")
+        return MedicalCodingWorkflow()
+
+def extract_patient_name(transcript):
+    import re
+    if not transcript:
+        return "John Doe"
+    # Try common explicit formats
+    patterns = [
+        r"(?i)patient\s*name\s*:\s*([^\n\r,]+)",
+        r"(?i)patient\s*:\s*([^\n\r,]+)",
+        r"(?i)name\s*:\s*([^\n\r,]+)"
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, transcript)
+        if match:
+            name = match.group(1).strip()
+            # Remove DOB or Contact info if captured on the same line
+            name = re.split(r"(?i)\b(?:dob|date of birth|contact|phone|tel|number)\b", name)[0].strip()
+            name = re.sub(r'[^\w\s\.-]', '', name).strip()
+            if name:
+                return name
+                
+    # Look for "Jane Doe, a 45-year-old" or similar in the text
+    match = re.search(r"([A-Z][a-z]+ [A-Z][a-z]+),\s*(?:a\s+)?\d+[- ]*(?:year|yo|y\.o\.)", transcript)
+    if match:
+        name = match.group(1).strip()
+        name = re.split(r"(?i)\b(?:dob|date of birth|contact|phone|tel|number)\b", name)[0].strip()
+        return name
+        
+    # Look for "Jane Doe is a 45-year-old"
+    match = re.search(r"([A-Z][a-z]+ [A-Z][a-z]+)\s+is\s+a\s+\d+[- ]*(?:year|yo|y\.o\.)", transcript)
+    if match:
+        name = match.group(1).strip()
+        name = re.split(r"(?i)\b(?:dob|date of birth|contact|phone|tel|number)\b", name)[0].strip()
+        return name
+        
+    return "John Doe"
 
 # --- HELPER FUNCTIONS ---
 
@@ -251,20 +301,12 @@ with col_output:
     if st.session_state['result']:
         res = st.session_state['result']
         
-        st.markdown("""
-            <div style="background-color:#dcfce7; padding:0.8rem; border-radius:8px; border-left: 5px solid #166534; margin-bottom: 1rem;">
-                <b style="color:#166534;">✅ HIPAA Compliant Mode Active</b>
-                <p style="color:#166534; margin:0; font-size:0.9rem;">Patient PHI (Name, DOB, Contact) was automatically redacted by the Privacy Agent before processing.</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        st.text_area("🔐 HIPAA-Anonymized Text (Passed to LLM)", value=res.get("anonymized_note", "N/A"), height=180, disabled=True)
-        st.markdown("<br>", unsafe_allow_html=True)
+
 
         st.button("➕ Start New Analysis", use_container_width=True, on_click=reset_analysis)
 
         details = res.get('details', [])
-        avg_conf_pct = 96
+        avg_conf_pct = 0
         if details:
             confidences = [float(d.get('confidence', 0)) for d in details if d.get('confidence') is not None]
             if confidences:
@@ -274,7 +316,7 @@ with col_output:
                 else:
                     avg_conf_pct = int(avg_conf)
 
-        m1, m2, m3, m4, m5 = st.columns(5)
+        m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.metric("Diagnoses", res['summary'].get('total_diagnoses', 0))
         with m2:
@@ -282,8 +324,6 @@ with col_output:
         with m3:
             st.metric("Total Codes", res['summary'].get('total_codes', 0))
         with m4:
-            st.metric("Est. Revenue", f"${res['summary'].get('total_revenue', 0):.2f}", delta="Financial Projection")
-        with m5:
             st.markdown(f"""
             <div style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; height: 100%;">
                 <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 5px 0;">Confidence</p>
@@ -308,7 +348,7 @@ with col_output:
 
         st.markdown(f'''
         <div class="glass-card" style="margin-top: 1rem;">
-            <h4 style="margin-top: 0; color: var(--text-main); font-weight: 600; margin-bottom: 1rem;">🤝 Patient-Friendly Summary</h4>
+            <h4 style="margin-top: 0; color: var(--text-main); font-weight: 600; margin-bottom: 1rem;">🤝 Summary</h4>
             <div style="background: rgba(255, 255, 255, 0.6); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.8); color: var(--text-main); line-height: 1.6; font-size: 1.05rem; white-space: pre-wrap; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">{res.get('patient_summary', 'No summary generated.')}</div>
         </div>
         ''', unsafe_allow_html=True)
@@ -325,7 +365,7 @@ with col_output:
         st.markdown(html_tags, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        st.markdown("#### 📄 ICD-10 & CPT Billing Codes")
+        st.markdown("#### 📄 ICD-10 Billing Codes")
         df = pd.DataFrame(res['details'])
         if not df.empty:
             def color_status(val):
@@ -334,30 +374,36 @@ with col_output:
                 return 'color: #f59e0b; font-weight: bold;'
             
             # Reorder columns for better flow
-            cols = ['entity', 'type', 'code', 'est_price', 'description', 'medical_necessity', 'status']
+            cols = ['entity', 'type', 'code', 'confidence', 'est_price', 'description', 'medical_necessity', 'status']
             df = df[[c for c in cols if c in df.columns]]
-            df.columns = ['Entity', 'Type', 'Code', 'Est. Price', 'Description', 'Med. Necessity', 'Status']
+            df.columns = ['Entity', 'Type', 'Code', 'Confidence', 'Est. Price', 'Description', 'Med. Necessity', 'Status']
             
             st.dataframe(df.style.map(color_status, subset=['Status']), use_container_width=True)
             
             # Action Buttons
-            col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+            col_d1, col_d2 = st.columns(2)
             with col_d1:
                 csv = df.to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Download Report", csv, "medical_report.csv", "text/csv", key='dl-csv', use_container_width=True)
             with col_d2:
-                from agents.reporter import ReportingAgent
-                rep = ReportingAgent()
-                pdf_file = rep.generate_pdf_invoice(res, patient_name="John Doe")
+                import importlib
+                import agents.reporter
+                importlib.reload(agents.reporter)
+                rep = agents.reporter.ReportingAgent()
+                patient_name = extract_patient_name(st.session_state.get('transcript', ''))
+                pdf_file = rep.generate_pdf_invoice(res, patient_name=patient_name)
                 if pdf_file and os.path.exists(pdf_file):
                     with open(pdf_file, "rb") as f:
-                        st.download_button("📄 Download PDF Invoice", f, file_name="invoice.pdf", mime="application/pdf", key='dl-pdf', use_container_width=True)
+                        st.download_button(
+                            label="🖨️ Print Bill",
+                            data=f,
+                            file_name="billing_receipt.pdf",
+                            mime="application/pdf",
+                            key='print-bill',
+                            use_container_width=True
+                        )
                 else:
-                    st.button("📄 PDF Error", disabled=True, use_container_width=True)
-            with col_d3:
-                st.button("📧 Send to Billing", use_container_width=True, key='send-bill')
-            with col_d4:
-                st.button("🏛️ Submit to Insurance", type="primary", use_container_width=True, key='sub-ins')
+                    st.button("🖨️ Print Bill (Error)", disabled=True, use_container_width=True)
         else:
             st.warning("No medical codes detected.")
     else:
@@ -382,7 +428,6 @@ with st.sidebar:
 
     is_done = st.session_state['result'] is not None
     agents = [
-        ("Privacy Agent (HIPAA)", "PHI Redacted & Secured" if is_done else "Waiting..."),
         ("OCR Agent", "Extraction Complete" if is_done else "Waiting..."),
         ("Speech Agent", "Transcription Complete" if is_done else "Waiting..."),
         ("Extractor Agent", "Entities Identified" if is_done else "Waiting..."),

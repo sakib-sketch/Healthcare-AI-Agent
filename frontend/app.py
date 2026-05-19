@@ -1,6 +1,10 @@
+import os
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+
 import streamlit as st
 import sys
-import os
 import pandas as pd
 from PIL import Image
 import tempfile
@@ -41,8 +45,13 @@ def load_css(file_name):
 load_css("style.css")
 
 # --- INITIALIZE SESSION STATE ---
+_DEFAULT_TEXT = """Patient: Sarah Jenkins (DOB: 05/12/1962). Contact number: 555-0198.
+The patient presented today with a painful ulcer on her right foot. 
+Diagnosis: Diabetic Foot Ulcer and Peripheral Neuropathy.
+Treatment: Ordered wound dressing and referred to Podiatry."""
+
 _DEFAULTS = {
-    'extracted_text': "",
+    'extracted_text': _DEFAULT_TEXT,
     'result': None,
     'transcript': "",
     'is_analyzing': False

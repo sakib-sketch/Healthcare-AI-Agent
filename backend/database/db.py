@@ -6,6 +6,8 @@ import os
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    DATABASE_URL = "sqlite:///./medical_coding.db"
 
 engine = create_engine(DATABASE_URL)
 

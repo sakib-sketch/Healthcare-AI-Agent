@@ -27,6 +27,15 @@ if os.path.exists(tesseract_path):
 # Add backend to path so we can import agents
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'backend')))
 
+# Force reload of database package to clear out old SQLite caching from active Streamlit memory
+if 'database' in sys.modules:
+    import importlib
+    if 'database.db' in sys.modules:
+        import database.db
+        importlib.reload(database.db)
+    import database
+    importlib.reload(database)
+
 # --- CONFIG ---
 st.set_page_config(
     page_title="MediCode AI | Agentic Healthcare", 
@@ -34,6 +43,16 @@ st.set_page_config(
     page_icon="🏥",
     initial_sidebar_state="expanded"
 )
+
+# --- AUTHENTICATION GATEKEEPER ---
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from Registration import render_auth_page
+    render_auth_page()
+    st.stop()
 
 # --- UTILITY: LOAD CSS ---
 def load_css(file_name):
@@ -423,6 +442,20 @@ with st.sidebar:
             <p style="margin:0; color:rgba(255,255,255,0.7); font-size:0.85rem;">Monitoring live reasoning chain</p>
         </div>
     """, unsafe_allow_html=True)
+
+    if st.session_state.get("authenticated") and st.session_state.get("user"):
+        st.markdown(f"""
+            <div style="background: rgba(255,255,255,0.1); padding: 0.8rem; border-radius: 8px; margin-bottom: 0.5rem; border: 1px solid rgba(255,255,255,0.15);">
+                <span style="color: white; font-size: 0.9rem;">👤 Logged in as: <b>{st.session_state.user[1]}</b></span>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("🚪 Logout", use_container_width=True):
+            from auth import logout_user
+            logout_user(st.session_state.user[0])
+            st.session_state.authenticated = False
+            st.session_state.user = None
+            st.rerun()
+        st.markdown("<hr style='margin: 1rem 0; border-color: rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
 
     st.markdown('<span class="sidebar-label">ACTIVE AGENTS</span>', unsafe_allow_html=True)
 

@@ -1,0 +1,30 @@
+.entities-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: default;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.entity-chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px hsla(258, 60%, 40%, 0.25);
+}
+
+.entity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

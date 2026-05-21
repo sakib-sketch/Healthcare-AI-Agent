@@ -1,5 +1,5 @@
 from .base_agent import BaseAgent
-import json
+from .json_parser import clean_and_parse_json
 
 class AuditorAgent(BaseAgent):
     def __init__(self):
@@ -39,10 +39,4 @@ class AuditorAgent(BaseAgent):
         
         prompt = self.prompt_template.format(clinical_note=note, suggested_codes=str(codes))
         response = self.generate_response(prompt)
-        try:
-            start = response.find('[')
-            end = response.rfind(']') + 1
-            json_data = response[start:end]
-            return json.loads(json_data)
-        except Exception as e:
-            return {"error": f"Failed to audit codes: {str(e)}", "raw_response": response}
+        return clean_and_parse_json(response, default_fallback=[])

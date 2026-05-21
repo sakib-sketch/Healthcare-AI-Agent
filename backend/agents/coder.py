@@ -1,5 +1,5 @@
 from .base_agent import BaseAgent
-import json
+from .json_parser import clean_and_parse_json
 
 class CoderAgent(BaseAgent):
     def __init__(self):
@@ -37,10 +37,4 @@ class CoderAgent(BaseAgent):
             procedures=str(procedures)
         )
         response = self.generate_response(prompt)
-        try:
-            start = response.find('[')
-            end = response.rfind(']') + 1
-            json_data = response[start:end]
-            return json.loads(json_data)
-        except Exception as e:
-            return {"error": f"Failed to map codes: {str(e)}", "raw_response": response}
+        return clean_and_parse_json(response, default_fallback=[])

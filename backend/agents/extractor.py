@@ -1,5 +1,5 @@
 from .base_agent import BaseAgent
-import json
+from .json_parser import clean_and_parse_json
 
 class ExtractorAgent(BaseAgent):
     def __init__(self):
@@ -30,11 +30,10 @@ class ExtractorAgent(BaseAgent):
     def extract(self, note):
         prompt = self.prompt_template.format(clinical_note=note)
         response = self.generate_response(prompt)
-        try:
-            # Simple cleaning in case the model adds extra text
-            start = response.find('{')
-            end = response.rfind('}') + 1
-            json_data = response[start:end]
-            return json.loads(json_data)
-        except Exception as e:
-            return {"error": f"Failed to parse extraction: {str(e)}", "raw_response": response}
+        default_fallback = {
+            "diagnosis": [],
+            "symptoms": [],
+            "procedures": [],
+            "medications": []
+        }
+        return clean_and_parse_json(response, default_fallback=default_fallback)

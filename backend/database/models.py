@@ -1,6 +1,6 @@
 #PATIENT CASE MODEL
 
-from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -62,3 +62,38 @@ class ClinicalEntity(Base):
     entity_type = Column(String)
 
     patient_case = relationship("PatientCase", back_populates="entities")
+
+# CLINICAL DECISION SUPPORT MODEL
+
+class ClinicalDecisionRecord(Base):
+
+    __tablename__ = "clinical_decisions"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    symptom_input = Column(Text)
+
+    demographics = Column(String, nullable=True)
+
+    medications_input = Column(Text, nullable=True)
+
+    history_input = Column(Text, nullable=True)
+
+    # Risk assessment summary fields
+    overall_severity = Column(String, nullable=True)
+
+    readmission_risk_pct = Column(Float, nullable=True)
+
+    sepsis_flag = Column(String, nullable=True)
+
+    # Drug safety
+    drug_safety_status = Column(String, nullable=True)
+
+    total_interactions = Column(Integer, nullable=True)
+
+    # Top differential diagnosis
+    top_diagnosis = Column(String, nullable=True)
+
+    top_diagnosis_confidence = Column(Float, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
